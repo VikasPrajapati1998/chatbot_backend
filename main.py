@@ -4,6 +4,9 @@ from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
 from transformers import pipeline, AutoTokenizer, AutoModelForQuestionAnswering
+import torch
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
+from model import *  # Import the fine-tuning function
 
 app = FastAPI()
 
@@ -41,7 +44,7 @@ async def scrape_website(request: URLRequest):
         # Check if the request was successful
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            scraped_text = " ".join([tag.get_text(strip=True) for tag in soup.find_all(['h1', 'h2', 'h3', 'p', 'ul', 'li'])])
+            scraped_text = " ".join([tag.get_text(strip=True) for tag in soup.find_all([all])])
 
             # Store the scraped text in memory
             scraped_data_storage[request.url] = scraped_text
@@ -54,19 +57,24 @@ async def scrape_website(request: URLRequest):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Initialize the text generation model
-llm_pipeline = pipeline("text-generation", model="gpt2")  # or "EleutherAI/gpt-neo-125M"
+# # Initialize the text generation model
+# llm_pipeline = pipeline("text-generation", model="gpt2")  # or "EleutherAI/gpt-neo-125M"
 
 def get_llm_answer(scraped_text, question):
     prompt = f"Here is some information about a website:\n\n{scraped_text}\n\nGiven this information, answer the following question:\n{question}\n\nAnswer:"
-    
+    print("B4: ", type(prompt), len(prompt))
     # Limit the length of the prompt to avoid index errors
     if len(prompt) > 1024:
         prompt = prompt[:1024]
+        print("After", type(prompt), len(prompt))
         print(prompt)  # Truncate the prompt to the first 1024 characters
 
     # Use the local model for generation with adjusted parameters
-    response = llm_pipeline(prompt, max_new_tokens=50, num_return_sequences=1)  # Adjust max_new_tokens as needed
+    # response = llm_pipeline(prompt, max_new_tokens=50, num_return_sequences=1)  # Adjust max_new_tokens as needed
+
+    fine_tune_gpt2_on_dataset(prompt)
+    text_generator = GPT2TextGenerator(model_path='fine_tuned_gpt2.pth')
+    response = text_generator.generate_text(prompt, length=200)
 
     return response[0]['generated_text'].strip()
 
